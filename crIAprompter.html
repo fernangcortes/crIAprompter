@@ -1,0 +1,1532 @@
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>crIAPrompter</title>
+
+<meta property="og:title" content="crIAprompter">
+<meta property="og:description" content=""Fale livremente. Nós acompanhamos o seu ritmo. Voice tracking impecável + controles manuais. Inverte apenas a janela de projeção">
+<meta property="og:image" content="https://fernangcortes.github.io/calculadora-consignado-servidor-go/preview.png">
+<meta property="og:url" content="https://fernangcortes.github.io/calculadora-consignado-servidor-go/">
+<meta property="og:type" content="website">
+
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; overflow: hidden; background-color: #0f172a; } /* Slate-900 darker */
+        
+        /* Ocultar conteúdo principal inicialmente para evitar blink */
+        #main-header, #main-workspace, #main-footer {
+            opacity: 0;
+            transition: opacity 1s ease;
+        }
+
+        #scrolling-container {
+            position: relative;
+            will-change: transform;
+            padding-top: 30vh; /* Linha de Leitura (30%) */
+            padding-bottom: 70vh; 
+        }
+
+        .reading-guide {
+            position: absolute;
+            top: 30%; 
+            left: 0;
+            right: 0;
+            z-index: 50;
+            pointer-events: none;
+            display: flex;
+            align-items: center;
+        }
+        .reading-guide::before {
+            content: '';
+            flex: 1;
+            height: 2px;
+            background: rgba(230, 29, 57, 0.3); /* #e61d39 - Red guide */
+        }
+        .reading-guide::after {
+            content: '\f0da';
+            font-family: 'Font Awesome 6 Free';
+            font-weight: 900;
+            color: #e61d39; /* #e61d39 */
+            font-size: 24px;
+            margin-left: 10px;
+            margin-right: 20px;
+        }
+
+        .prompter-text {
+            font-weight: bold;
+            line-height: 1.6;
+            text-align: left;
+            max-width: 90%;
+            margin: 0 auto;
+            white-space: pre-wrap; 
+            outline: none;
+            transition: font-size 0.1s, line-height 0.2s;
+            cursor: default; 
+            padding: 10px;
+            border: 2px solid transparent;
+        }
+        
+        .prompter-text[contenteditable="true"] {
+            background: rgba(30, 30, 30, 0.9);
+            border-color: #f8ac1a; /* #f8ac1a Yellow */
+            border-radius: 8px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            cursor: text;
+        }
+
+        .word-token {
+            display: inline;
+            border-radius: 4px;
+            transition: background 0.3s, color 0.3s;
+            padding: 2px 0;
+        }
+        
+        /* Destaque da Palavra Ativa (Vermelho CriaLab) */
+        .word-active {
+            color: #e61d39; 
+            text-shadow: 0 0 15px rgba(230, 29, 57, 0.6);
+            border-bottom: 2px solid rgba(230, 29, 57, 0.3);
+        }
+
+        /* Timeline Styles */
+        #timeline-sidebar {
+            position: absolute;
+            right: 10px;
+            top: 10%;
+            bottom: 10%;
+            width: 24px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            z-index: 60;
+            border-radius: 12px;
+            pointer-events: auto;
+        }
+        
+        .timeline-track {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 1px;
+        }
+
+        .timeline-dot {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: #6b7280;
+            left: 50%;
+            transform: translateX(-50%);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .timeline-dot:hover {
+            width: 14px;
+            height: 14px;
+        }
+
+        /* CRIALAB PALETTE CYCLE for Timeline */
+        .timeline-dot.c0:hover { background-color: #e64034; box-shadow: 0 0 12px #e64034; } 
+        .timeline-dot.c1:hover { background-color: #e61d39; box-shadow: 0 0 12px #e61d39; } 
+        .timeline-dot.c2:hover { background-color: #98a438; box-shadow: 0 0 12px #98a438; } 
+        .timeline-dot.c3:hover { background-color: #f8ac1a; box-shadow: 0 0 12px #f8ac1a; } 
+        .timeline-dot.c4:hover { background-color: #621e2d; box-shadow: 0 0 12px #621e2d; } 
+        .timeline-dot.c5:hover { background-color: #d946ef; box-shadow: 0 0 12px #d946ef; } 
+
+        .timeline-tooltip {
+            position: absolute;
+            right: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            background-color: #1f2937;
+            color: #e5e7eb;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s;
+            border: 1px solid #374151;
+            font-family: monospace;
+            z-index: 70;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        
+        .timeline-dot:hover .timeline-tooltip {
+            opacity: 1;
+        }
+
+        ::-webkit-scrollbar { width: 0px; background: transparent; }
+        .fade-in { animation: fadeIn 0.3s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+
+        .status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; transition: all 0.3s ease; }
+        .status-off { background-color: #e61d39; box-shadow: 0 0 5px #e61d39; } /* Red */
+        .status-on { background-color: #008280; box-shadow: 0 0 8px #008280; } /* Teal */
+        .status-remote { background-color: #f8ac1a; box-shadow: 0 0 8px #f8ac1a; } /* Yellow */
+
+        kbd {
+            background-color: #374151;
+            border: 1px solid #4b5563;
+            border-radius: 4px;
+            padding: 2px 6px;
+            font-family: monospace;
+            font-size: 0.8em;
+            color: #e5e7eb;
+            box-shadow: 0 1px 0 #1f2937;
+        }
+
+        .remote-btn { active:scale: 0.95; transition: transform 0.1s; touch-action: manipulation; }
+        
+        .mic-listening {
+            animation: pulse-cria 1.5s infinite;
+            background-color: #621e2d !important; /* Burgundy bg */
+            border-color: #d0235b !important; /* Magenta border */
+            color: #fca5a5 !important;
+        }
+        @keyframes pulse-cria {
+            0% { box-shadow: 0 0 0 0 rgba(208, 35, 91, 0.7); }
+            50% { box-shadow: 0 0 0 10px rgba(208, 35, 91, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(208, 35, 91, 0); }
+        }
+
+        #ai-debug-bar {
+            font-family: monospace;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-size: 10px;
+        }
+
+        /* Loading Screen Styles */
+        #landing-container {
+            position: fixed;
+            inset: 0;
+            background-color: #020617; /* Slate-950 */
+            z-index: 200; /* Supremo */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Courier New', monospace;
+            transition: opacity 1s ease-out;
+        }
+
+        .loading-title {
+            font-size: 3.5rem;
+            font-weight: bold;
+            margin-bottom: 1rem;
+            letter-spacing: 2px;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        /* Visualizer Waveform */
+        .visualizer {
+            display: flex;
+            gap: 6px;
+            align-items: flex-end;
+            height: 60px;
+            margin-bottom: 2rem;
+        }
+        .bar {
+            width: 8px;
+            border-radius: 4px;
+            animation: wave 1s ease-in-out infinite alternate;
+        }
+        @keyframes wave {
+            0% { height: 10%; }
+            100% { height: var(--h); }
+        }
+
+        .progress-container {
+            width: 300px;
+            height: 2px;
+            background: #1e293b;
+            margin-bottom: 2rem;
+            position: relative;
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: #008280; /* Cria Teal */
+            width: 0%;
+            box-shadow: 0 0 10px #008280;
+            transition: width 0.2s linear;
+            border-radius: 2px;
+        }
+
+        .signature {
+            position: absolute;
+            bottom: 20px;
+            font-size: 10px;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        /* AI Modal Styles */
+        .ai-chip {
+            cursor: pointer;
+            border: 1px solid #1e293b;
+            padding: 4px 12px;
+            border-radius: 99px;
+            font-size: 0.75rem;
+            transition: all 0.2s;
+            background: #0f172a;
+            color: #94a3b8;
+        }
+        .ai-chip:hover {
+            border-color: #008280;
+            color: #008280;
+            background: rgba(0, 130, 128, 0.1);
+        }
+        .ai-generating {
+            animation: glow-pulse 2s infinite;
+        }
+        @keyframes glow-pulse {
+            0% { box-shadow: 0 0 5px #008280; }
+            50% { box-shadow: 0 0 20px #008280; }
+            100% { box-shadow: 0 0 5px #008280; }
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white h-screen flex flex-col">
+
+    <!-- Unified Landing & Menu Container -->
+    <div id="landing-container">
+        
+        <!-- Fixed Title -->
+        <div class="text-center z-10 mt-10">
+            <div class="loading-title justify-center">
+                <span style="color: #008280; text-shadow: 0 0 20px rgba(0, 130, 128, 0.4);">Cria</span>
+                <span style="color: #000000; background-color: #ffffff; padding: 0 10px; border-radius: 6px; box-shadow: 0 0 15px rgba(255,255,255,0.2);">Prompter</span>
+            </div>
+            <!-- OPÇÃO A: Copywriting -->
+            <div class="text-sm mt-2 tracking-[0.2em] font-light italic" style="color: #98a438;">"Fale livremente. Nós acompanhamos o seu ritmo."</div>
+        </div>
+
+        <!-- Dynamic Center Area -->
+        <div class="flex-1 w-full flex flex-col items-center justify-center relative">
+            
+            <!-- Phase 1: Loading (Visualizer) -->
+            <div id="phase-loading" class="absolute inset-0 flex flex-col items-center justify-center transition-opacity duration-500">
+                <!-- Color Palette Waveform -->
+                <div class="visualizer">
+                    <div class="bar" style="background-color: #e64034; --h: 60%; animation-delay: 0s;"></div>
+                    <div class="bar" style="background-color: #e61d39; --h: 80%; animation-delay: 0.1s;"></div>
+                    <div class="bar" style="background-color: #98a438; --h: 40%; animation-delay: 0.2s;"></div>
+                    <div class="bar" style="background-color: #f8ac1a; --h: 100%; animation-delay: 0.3s;"></div>
+                    <div class="bar" style="background-color: #008280; --h: 50%; animation-delay: 0.4s;"></div>
+                    <div class="bar" style="background-color: #d0235b; --h: 70%; animation-delay: 0.5s;"></div>
+                    <div class="bar" style="background-color: #621e2d; --h: 90%; animation-delay: 0.6s;"></div>
+                </div>
+                
+                <div class="progress-container">
+                    <div id="loading-progress" class="progress-bar"></div>
+                </div>
+                <div class="text-xs font-mono tracking-widest animate-pulse" style="color: #008280;">INICIALIZANDO ESTÚDIO...</div>
+            </div>
+
+            <!-- Phase 2: Start Button (One-Click) -->
+            <div id="phase-menu" class="absolute inset-0 flex flex-col items-center justify-center transition-opacity duration-1000 opacity-0 pointer-events-none">
+                
+                <!-- Botão Hero -->
+                <button onclick="startApp('ai')" class="group relative bg-[#008280] hover:bg-[#006e6c] text-white font-bold py-6 px-12 rounded-full text-2xl shadow-[0_0_30px_rgba(0,130,128,0.4)] transition-all duration-300 hover:scale-105 hover:shadow-[0_0_50px_rgba(0,130,128,0.6)] flex items-center gap-4 mb-8">
+                    <div class="absolute inset-0 rounded-full border-2 border-white/20 animate-ping opacity-20"></div>
+                    <i class="fas fa-microphone-lines text-3xl"></i>
+                    <span class="tracking-widest">INICIAR</span>
+                </button>
+
+                <!-- Links Secundários -->
+                <div class="flex gap-8 text-xs font-mono tracking-wide uppercase">
+                    <button onclick="triggerLocalUpload()" class="flex items-center gap-2 hover:underline transition-colors" style="color: #f8ac1a;">
+                        <i class="fas fa-folder-open"></i> Carregar Arquivo
+                    </button>
+                    <div class="w-px h-4 bg-slate-700"></div>
+                    <button onclick="toggleQRModal()" class="flex items-center gap-2 hover:underline transition-colors" style="color: #d0235b;">
+                        <i class="fas fa-qrcode"></i> Remote
+                    </button>
+                </div>
+
+            </div>
+
+        </div>
+
+        <!-- Fixed Footer -->
+        <div class="signature">
+            esse programa foi desenvolvido por FGC - Fernando Gomes Côrtes
+        </div>
+    </div>
+
+    <input type="file" id="file-input" class="hidden" accept=".txt,.md,.csv">
+
+    <div id="edit-warning" class="fixed top-20 left-1/2 -translate-x-1/2 text-white px-4 py-2 rounded-full shadow-lg font-bold text-sm z-50 hidden pointer-events-none" style="background-color: #e64034;">
+        <i class="fas fa-pen mr-2"></i>MODO EDIÇÃO (Duplo Clique para Sair)
+    </div>
+
+    <!-- Countdown Overlay -->
+    <div id="countdown-overlay" class="fixed inset-0 bg-black/80 z-[90] hidden flex-col items-center justify-center backdrop-blur-sm">
+        <div id="countdown-text" class="text-9xl font-black text-center animate-pulse" style="color: #008280;">3</div>
+        <div class="text-gray-400 text-xl mt-8 font-mono uppercase tracking-widest">Preparando IA...</div>
+    </div>
+
+    <!-- Modals (QR, Shortcuts, Touch) -->
+    <div id="qr-modal" class="fixed inset-0 bg-black/90 z-[70] flex items-center justify-center hidden backdrop-blur-md" onclick="toggleQRModal()">
+        <div class="bg-white p-8 rounded-2xl shadow-2xl max-w-sm w-full text-center" onclick="event.stopPropagation()">
+            <h2 class="text-2xl font-bold text-gray-900 mb-2">Controle Remoto</h2>
+            <p class="text-sm text-gray-600 mb-4">Aponte a câmera do celular.</p>
+            <div id="qrcode-container" class="flex justify-center mb-4"></div>
+            <div id="connection-status" class="text-sm font-mono mb-4" style="color: #e64034;"><i class="fas fa-spinner fa-spin mr-2"></i>Aguardando...</div>
+            <button onclick="toggleQRModal()" class="mt-4 text-gray-500 hover:text-gray-800 underline text-sm">Fechar</button>
+        </div>
+    </div>
+
+    <div id="shortcuts-modal" class="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center hidden backdrop-blur-sm" onclick="toggleShortcutsModal()">
+        <div class="bg-gray-800 rounded-xl shadow-2xl border border-gray-700 max-w-4xl w-full m-4 flex flex-col max-h-[90vh]" onclick="event.stopPropagation()">
+            <div class="flex justify-between items-center p-6 border-b border-gray-700">
+                <h2 class="text-2xl font-bold text-white"><i class="fas fa-keyboard mr-2" style="color: #008280;"></i> Manual de Comandos</h2>
+                <button onclick="toggleShortcutsModal()" class="text-gray-400 hover:text-white transition"><i class="fas fa-times text-xl"></i></button>
+            </div>
+            <div class="p-6 overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-8 text-sm">
+                <div class="space-y-6">
+                    <div>
+                        <h3 class="font-bold uppercase text-xs mb-3 tracking-wider" style="color: #d0235b;">Comandos de Voz (IA)</h3>
+                        <div class="space-y-2">
+                            <div class="flex justify-between items-center bg-gray-700/50 p-2 rounded"><span>"Parar Teleprompter"</span> <div><span class="text-xs text-gray-400">Pausa Imediata</span></div></div>
+                            <div class="flex justify-between items-center bg-gray-700/50 p-2 rounded"><span>"Voltar ao Início"</span> <div><span class="text-xs text-gray-400">Rewind Total</span></div></div>
+                        </div>
+                    </div>
+                    <div>
+                        <h3 class="font-bold uppercase text-xs mb-3 tracking-wider" style="color: #008280;">Teclado</h3>
+                        <div class="space-y-2">
+                            <div class="flex justify-between items-center bg-gray-700/50 p-2 rounded"><span>Espaço / K</span> <div>Play/Pause</div></div>
+                            <div class="flex justify-between items-center bg-gray-700/50 p-2 rounded"><span>Setas</span> <div>Velocidade</div></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="p-4 border-t border-gray-700 bg-gray-800/50 text-center">
+                <button onclick="toggleShortcutsModal()" class="text-white px-6 py-2 rounded font-bold transition" style="background-color: #008280;">Entendi</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI ASSISTANT MODAL (UPDATED) -->
+    <div id="ai-modal" class="fixed inset-0 bg-black/90 z-[70] flex items-center justify-center hidden backdrop-blur-md" onclick="toggleAIModal()">
+        <div class="bg-slate-900 border border-slate-700 p-6 rounded-2xl shadow-2xl max-w-4xl w-full flex flex-col h-[85vh]" onclick="event.stopPropagation()">
+            <div class="flex justify-between items-center mb-4 shrink-0">
+                <h2 class="text-2xl font-bold text-white flex items-center gap-2">
+                    <i class="fas fa-wand-magic-sparkles" style="color: #d0235b;"></i> Assistente de Roteiro IA
+                </h2>
+                <button onclick="toggleAIModal()" class="text-gray-400 hover:text-white"><i class="fas fa-times text-xl"></i></button>
+            </div>
+            
+            <!-- INPUT SECTION -->
+            <div id="ai-input-section" class="flex flex-col flex-1 min-h-0">
+                <label class="block text-xs font-bold text-slate-400 mb-3 uppercase tracking-wide">O que você gostaria de fazer?</label>
+                
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4 shrink-0">
+                    <button onclick="fillPrompt('Otimize este texto para leitura em teleprompter. Quebre linhas em pausas naturais, coloque palavras-chave em maiúsculas e adicione marcadores visuais.')" class="ai-chip text-center justify-center">🎬 Formatar para Prompter</button>
+                    <button onclick="fillPrompt('Reescreva este texto para que fique mais curto, direto e com tom conversacional.')" class="ai-chip text-center justify-center">⚡ Resumir & Simplificar</button>
+                    <button onclick="fillPrompt('Traduza este texto para o Inglês mantendo o tom original.')" class="ai-chip text-center justify-center">🇺🇸 Traduzir para Inglês</button>
+                    <button onclick="fillPrompt('Expanda este tópico em um roteiro completo de 30 segundos.')" class="ai-chip text-center justify-center">📝 Expandir Tópico</button>
+                </div>
+                
+                <textarea id="ai-prompt-input" class="w-full bg-slate-800 border border-slate-700 rounded-xl p-4 text-white placeholder-slate-500 focus:outline-none focus:border-[#d0235b] transition-colors resize-none flex-1 mb-4 text-lg" placeholder="Digite sua instrução para a IA aqui... Ex: 'Crie uma introdução energética sobre tecnologia'"></textarea>
+
+                <div class="flex justify-end">
+                    <button onclick="callGemini()" id="btn-generate-ai" class="text-white px-8 py-4 rounded-xl font-bold shadow-lg flex items-center gap-3 transition-all hover:scale-105 hover:shadow-xl text-lg" style="background-color: #d0235b;">
+                        <i class="fas fa-wand-magic-sparkles"></i> Gerar Roteiro
+                    </button>
+                </div>
+            </div>
+
+            <!-- RESULT EDITOR SECTION (Initially Hidden) -->
+            <div id="ai-result-container" class="hidden flex-col flex-1 min-h-0 h-full">
+                <div class="flex justify-between items-center mb-3 shrink-0">
+                    <button onclick="resetAIModal()" class="text-sm text-slate-400 hover:text-white flex items-center gap-2 px-3 py-1 rounded hover:bg-slate-800 transition-colors">
+                        <i class="fas fa-arrow-left"></i> Voltar ao Prompt
+                    </button>
+                    <div class="flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                        <label class="text-xs font-bold text-emerald-400 uppercase">Editor de Resultado</label>
+                    </div>
+                </div>
+                
+                <textarea id="ai-result-text" class="flex-1 w-full bg-slate-950 border border-slate-700 rounded-xl p-6 text-white font-mono text-lg leading-relaxed focus:outline-none focus:border-[#008280] transition-all resize-none shadow-inner mb-4"></textarea>
+                
+                <div class="flex gap-4 shrink-0">
+                    <button onclick="applyAIResult('replace')" class="flex-1 text-white py-4 rounded-xl font-bold text-lg shadow-lg flex items-center justify-center gap-2 transition-transform hover:scale-[1.02] hover:shadow-emerald-900/50" style="background-color: #008280;">
+                        <i class="fas fa-check-circle"></i> Aceitar e Usar
+                    </button>
+                    <button onclick="applyAIResult('append')" class="px-6 py-4 rounded-xl font-bold text-slate-400 border border-slate-700 hover:bg-slate-800 hover:text-white transition-colors">
+                        <i class="fas fa-plus"></i> Adicionar ao Final
+                    </button>
+                </div>
+            </div>
+            
+            <div id="ai-loading" class="hidden flex-col items-center justify-center py-20 text-center flex-1">
+                <i class="fas fa-circle-notch fa-spin text-5xl mb-6" style="color: #d0235b;"></i>
+                <p class="text-slate-300 text-xl font-light animate-pulse">Criando mágica...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- TOUCH OVERLAY -->
+    <div id="touch-overlay" class="fixed inset-0 bg-gray-900 z-[80] hidden flex-col">
+        <div class="bg-gray-800 p-4 border-b border-gray-700 flex justify-between items-center">
+            <h2 class="text-xl font-bold text-gray-300"><i class="fas fa-fingerprint mr-2"></i>Controle Touch</h2>
+            <button onclick="disableTouchMode()" class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded font-bold text-sm"><i class="fas fa-times mr-2"></i>Sair</button>
+        </div>
+        <div class="flex-1 grid grid-cols-2 gap-4 p-4 max-w-2xl mx-auto w-full">
+             <button onclick="togglePlay()" id="touch-btn-play" class="remote-btn col-span-2 rounded-2xl flex flex-col items-center justify-center py-8 shadow-lg active:opacity-80 select-none text-white" style="background-color: #008280;">
+                <i class="fas fa-play text-5xl mb-4"></i>
+                <span class="font-bold uppercase tracking-widest text-xl">Play / Pause</span>
+            </button>
+            <button onclick="adjustSpeed(-0.1)" class="remote-btn bg-gray-800 rounded-2xl flex flex-col items-center justify-center py-6 border border-gray-700 active:bg-gray-700 select-none"><i class="fas fa-backward text-3xl mb-2" style="color: #f8ac1a;"></i><span class="text-sm uppercase font-bold text-gray-400">Mais Lento</span></button>
+            <button onclick="adjustSpeed(0.1)" class="remote-btn bg-gray-800 rounded-2xl flex flex-col items-center justify-center py-6 border border-gray-700 active:bg-gray-700 select-none"><i class="fas fa-forward text-3xl mb-2" style="color: #f8ac1a;"></i><span class="text-sm uppercase font-bold text-gray-400">Mais Rápido</span></button>
+            <button onclick="goHome()" class="remote-btn bg-gray-800 rounded-xl flex items-center justify-center py-4 border border-gray-700 active:bg-gray-700 select-none"><i class="fas fa-home mr-2" style="color: #e61d39;"></i> Início</button>
+            <button onclick="stop()" class="remote-btn rounded-xl flex items-center justify-center py-4 border active:opacity-80 select-none text-white" style="background-color: #e61d39; border-color: #e64034;"><i class="fas fa-stop mr-2"></i> STOP</button>
+        </div>
+    </div>
+
+    <!-- HEADER COLORIDO -->
+    <header id="main-header" class="bg-gray-900 p-2 border-b-2 flex justify-between items-center z-10 shadow-lg h-16 shrink-0 select-none px-4" style="border-color: #621e2d;">
+        
+        <!-- ESQUERDA -->
+        <div class="flex items-center gap-2 overflow-x-auto no-scrollbar mr-4" style="scrollbar-width: none;">
+            <div class="tooltip relative group flex items-center justify-center w-8 h-8 bg-slate-800 rounded-full border border-slate-700 shrink-0 shadow-sm" title="Status">
+                <div id="status-dot" class="status-dot status-off"></div>
+            </div>
+
+            <!-- Setup (Mic: Magenta, Popup: Blue-ish/Slate, Mirror: Red-Orange) -->
+            <button onclick="toggleVoiceTracking()" id="btn-voice-toggle" class="w-10 h-10 rounded-full text-white transition flex items-center justify-center border shadow-md hidden shrink-0" style="background-color: #d0235b; border-color: #d0235b;" title="Mic [Auto]">
+                <i class="fas fa-microphone-lines text-lg"></i>
+            </button>
+
+            <button onclick="openPrompterWindow()" class="w-10 h-10 bg-slate-700 hover:bg-slate-600 rounded-full text-white transition flex items-center justify-center shadow-md border border-slate-500 shrink-0" title="Janela Pop-up">
+                <i class="fas fa-up-right-from-square"></i>
+            </button>
+
+            <!-- Mirror: Red-Orange -->
+            <button onclick="toggleMirror()" id="btn-mirror" class="w-10 h-10 rounded-full text-white transition flex items-center justify-center shadow-md border shrink-0" style="background-color: #e64034; border-color: #e61d39;" title="Espelhar [M]">
+                <i class="fas fa-arrows-left-right"></i>
+            </button>
+            
+            <div class="h-8 w-px bg-slate-700 mx-1 shrink-0"></div>
+
+            <!-- Zona de Edição (Amarelo/Mostarda para ícones) -->
+            <div class="flex items-center bg-slate-800 border border-slate-700 rounded-lg p-1 gap-1 shrink-0 shadow-inner">
+                 <!-- AI MAGIC BUTTON (NEW) - FIXED ICON -->
+                 <button onclick="toggleAIModal()" class="w-8 h-8 rounded hover:bg-slate-700 transition flex items-center justify-center animate-pulse" style="color: #d0235b;" title="IA Mágica ✨">
+                    <i class="fas fa-wand-magic-sparkles"></i>
+                 </button>
+
+                 <div class="w-px h-4 bg-slate-600 mx-1"></div>
+
+                 <button onclick="toggleEditMode()" class="w-8 h-8 rounded hover:bg-slate-700 transition" style="color: #f8ac1a;" title="Editar"><i class="fas fa-pen text-sm"></i></button>
+                 
+                 <div class="relative group">
+                    <button class="w-8 h-8 rounded hover:bg-slate-700 transition flex items-center justify-center" style="color: #f8ac1a;" title="Importar">
+                        <i class="fas fa-file-import text-sm"></i>
+                    </button>
+                    <div class="absolute left-0 top-10 w-48 bg-gray-800 rounded-lg shadow-xl border border-gray-700 overflow-hidden hidden group-hover:block z-50">
+                        <button onclick="triggerLocalUpload()" class="w-full text-left px-4 py-3 hover:bg-gray-700 text-xs text-white flex items-center"><i class="fas fa-laptop mr-2 text-gray-400"></i> Do Computador</button>
+                        <button onclick="triggerDriveUpload()" class="w-full text-left px-4 py-3 hover:bg-gray-700 text-xs text-white flex items-center border-t border-gray-700"><i class="fab fa-google-drive mr-2 text-blue-400"></i> Google Drive</button>
+                    </div>
+                </div>
+
+                <div class="h-4 w-px bg-slate-600 mx-1"></div>
+
+                <button onclick="adjustFontSize(-2)" class="w-8 h-8 rounded hover:bg-slate-700 text-slate-300 hover:text-white transition" title="Fonte [-]"><i class="fas fa-font text-xs"></i></button>
+                <span id="font-size-display" class="w-10 text-center font-mono text-xs font-bold select-none" style="color: #98a438;">50px</span>
+                <button onclick="adjustFontSize(2)" class="w-8 h-8 rounded hover:bg-slate-700 text-slate-300 hover:text-white transition" title="Fonte [+]"><i class="fas fa-font text-lg"></i></button>
+                
+                <div class="h-4 w-px bg-slate-600 mx-1"></div>
+                
+                <button onclick="toggleLineHeight()" class="w-8 h-8 rounded hover:bg-slate-700 text-slate-300 hover:text-white transition" title="Linhas"><i class="fas fa-text-height"></i></button>
+                <button onclick="toggleAlign()" id="btn-align" class="w-8 h-8 rounded hover:bg-slate-700 text-slate-300 hover:text-white transition" title="Alinhar"><i class="fas fa-align-left"></i></button>
+            </div>
+        </div>
+
+        <!-- DIREITA -->
+        <div class="flex items-center gap-3 shrink-0">
+            
+            <!-- Play Separado - Teal -->
+            <button onclick="togglePlay()" id="btn-play" class="w-12 h-10 border-2 text-white rounded-lg transition flex items-center justify-center text-xl shadow-lg shrink-0" style="background-color: #008280; border-color: #008280;" title="Play [Espaço]">
+                <i class="fas fa-play"></i>
+            </button>
+
+            <!-- Speed Group -->
+            <div class="flex items-center bg-gray-950 border border-gray-800 rounded-lg p-1 gap-1 shadow-inner h-10">
+                 <button onclick="adjustSpeed(-0.1)" class="w-8 h-full flex items-center justify-center rounded hover:bg-gray-900 text-slate-400 hover:text-white transition" title="Lento [↓]"><i class="fas fa-minus text-xs"></i></button>
+                 
+                 <div class="flex flex-col items-center w-10">
+                    <span class="text-[9px] uppercase font-bold leading-none" style="color: #621e2d;">Vel</span>
+                    <span id="status-speed" class="font-mono text-sm font-bold leading-none" style="color: #008280;">1.0</span>
+                 </div>
+
+                 <button onclick="adjustSpeed(0.1)" class="w-8 h-full flex items-center justify-center rounded hover:bg-gray-900 text-slate-400 hover:text-white transition" title="Rápido [↑]"><i class="fas fa-plus text-xs"></i></button>
+            </div>
+
+            <div class="h-8 w-px bg-slate-700"></div>
+
+            <!-- Home - Pinkish Red -->
+            <button onclick="returnToStart()" class="w-10 h-10 rounded-full text-white transition flex items-center justify-center border shadow-md" style="background-color: #e61d39; border-color: #e61d39;" title="Início [Home]">
+                <i class="fas fa-home text-white"></i>
+            </button>
+
+            <!-- Dropdown Mais Ferramentas -->
+            <div class="relative">
+                <button onclick="toggleMoreMenu()" id="btn-more-tools" class="w-10 h-10 bg-slate-700 hover:bg-slate-600 rounded-full text-white transition flex items-center justify-center border border-slate-500 hover:border-slate-300 shadow-md" title="Mais Ferramentas">
+                    <i class="fas fa-ellipsis-v"></i>
+                </button>
+                
+                <div id="more-tools-menu" class="absolute right-0 top-12 w-48 bg-slate-800 rounded-xl shadow-2xl border border-slate-600 overflow-hidden hidden flex-col z-50">
+                    <button onclick="toggleQRModal(); toggleMoreMenu()" class="w-full text-left px-4 py-3 hover:bg-slate-700 text-sm text-slate-300 hover:text-white flex items-center">
+                        <i class="fas fa-qrcode w-6" style="color: #d0235b;"></i> Remote (QR)
+                    </button>
+                    <button onclick="enableTouchMode(); toggleMoreMenu()" class="w-full text-left px-4 py-3 hover:bg-slate-700 text-sm text-slate-300 hover:text-white flex items-center border-t border-slate-700">
+                        <i class="fas fa-fingerprint w-6" style="color: #f8ac1a;"></i> Touch Mode
+                    </button>
+                    <button onclick="toggleInvert(); toggleMoreMenu()" class="w-full text-left px-4 py-3 hover:bg-slate-700 text-sm text-slate-300 hover:text-white flex items-center border-t border-slate-700">
+                        <i class="fas fa-circle-half-stroke w-6 text-white"></i> Inverter Cores
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <main id="main-workspace" class="flex-1 relative overflow-hidden bg-black cursor-default">
+        <div class="reading-guide"></div>
+        
+        <!-- Timeline Lateral -->
+        <div id="timeline-sidebar">
+            <div class="timeline-track"></div>
+            <!-- Dots serão gerados via JS -->
+        </div>
+
+        <div id="viewport" class="w-full h-full overflow-hidden relative">
+            <div id="scrolling-container">
+                <div id="prompter-content" class="prompter-text text-6xl text-white" contenteditable="false" spellcheck="false" style="font-size: 50px;">
+IMAGINE UMA FERRAMENTA QUE REALMENTE ESCUTA VOCÊ.
+UMA TECNOLOGIA QUE ENTENDE O SEU RITMO,
+SUA RESPIRAÇÃO E SUAS PAUSAS.
+
+ESTA NÃO É APENAS MAIS UMA TELA ROLANDO TEXTO.
+É O SMART TELEPROMPTER AI.
+O SEU NOVO COPILOTO DE PRODUÇÃO DE CONTEÚDO.
+/
+QUANTAS VEZES VOCÊ TEVE QUE REGRAVAR PORQUE O TEXTO CORREU DEMAIS?
+OU TEVE QUE GESTICULAR PARA UM OPERADOR DESACELERAR A ROLAGEM?
+ISSO QUEBRA O FLUXO. MATA A NATURALIDADE.
+/
+COM NOSSA TECNOLOGIA EXCLUSIVA DE VOICE TRACKING,
+O TEXTO ESPERA POR VOCÊ.
+SE VOCÊ IMPROVISAR, ELE AGUARDA PACIENTEMENTE.
+SE VOCÊ ACELERAR NA EMOÇÃO DO DISCURSO, ELE ACOMPANHA INSTANTANEAMENTE.
+
+SEM CONTROLES REMOTOS COMPLEXOS.
+SEM A NECESSIDADE DE UM OPERADOR EXTRA.
+VOCÊ, A CÂMERA E A SUA MENSAGEM. NADA MAIS.
+/
+PARA JORNALISTAS, EDUCADORES, YOUTUBERS E PALESTRANTES.
+MODO MANUAL PRECISO PARA ESTÚDIOS.
+MODO IA PARA CRIADORES SOLO.
+CONTROLE TOTAL PELO CELULAR OU TOUCH SCREEN.
+/
+CHEGA DE PARECER UM ROBÔ LENDO UM SCRIPT.
+FALE COM O CORAÇÃO. NÓS CUIDAMOS DO RESTO.
+
+SMART TELEPROMPTER AI.
+A REVOLUÇÃO DA SUA ORATÓRIA COMEÇA AGORA.
+/
+*REGRAS FUTURAS:
+- DETECÇÃO AUTOMÁTICA DE LINHAS ÚNICAS (TURBO MODE)
+- SUGESTÃO DE REDUÇÃO DE FONTE SE DENSIDADE < 2 PALAVRAS/LINHA
+                </div>
+            </div>
+        </div>
+
+        <div id="edit-modal" class="absolute inset-0 bg-gray-900 z-50 flex flex-col p-8 hidden">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold text-white">Editar Script</h2>
+                <button onclick="toggleEditMode()" class="text-gray-400 hover:text-white"><i class="fas fa-times text-2xl"></i></button>
+            </div>
+            <textarea id="source-text" class="flex-1 bg-gray-800 text-white p-6 font-mono text-lg rounded border border-gray-700 focus:outline-none focus:border-blue-500 resize-none shadow-inner"></textarea>
+            <div class="mt-4 flex justify-end gap-3">
+                <button onclick="toggleEditMode()" class="px-6 py-2 text-gray-400 hover:text-white">Cancelar</button>
+                <button onclick="saveAndCloseEdit()" class="text-white px-8 py-2 rounded font-bold shadow-lg" style="background-color: #008280;">Salvar</button>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer id="main-footer" class="bg-gray-900 border-t border-gray-800 py-1 px-4 select-none flex justify-between items-center text-[10px] text-gray-500 h-8 shrink-0">
+        <div class="flex items-center gap-6 overflow-hidden whitespace-nowrap">
+            <div class="flex items-center gap-2">
+                <span class="text-gray-400"><kbd>Espaço</kbd> Play</span>
+                <span class="text-gray-400"><kbd>↑/↓</kbd> Vel</span>
+                <button onclick="toggleShortcutsModal()" class="flex items-center gap-1 hover:text-blue-400 transition cursor-pointer ml-2" title="Ajuda"><i class="fas fa-question-circle"></i><span>Ajuda</span></button>
+            </div>
+            <div class="w-px h-3 bg-gray-800"></div>
+            
+            <div class="flex items-center gap-2 text-purple-400 min-w-[250px] max-w-[400px]" id="ai-debug-container" style="display:none">
+                <i class="fas fa-wave-square" style="color: #d0235b;"></i> <span id="ai-debug-bar" title="Monitor">Aguardando voz...</span>
+            </div>
+
+            <div class="flex items-center gap-4 text-gray-400" id="metrics-container">
+                <span title="Palavras"><i class="fas fa-align-left mr-1"></i> <span id="word-count">0</span> plv</span>
+                <span title="Tempo Est."><i class="far fa-clock mr-1"></i> <span id="read-time">00:00</span></span>
+            </div>
+        </div>
+        <div class="flex items-center gap-2 text-right border-l border-gray-800 pl-4 ml-2 min-w-max">
+            <span class="font-semibold text-gray-600">Smart Teleprompter</span>
+            <span class="opacity-40">FGC</span>
+        </div>
+    </footer>
+
+    <script>
+        const state = {
+            mode: 'manual',
+            apiKey: '', // API Key defined here as per instructions
+            isPlaying: false,
+            speed: 0,
+            baseSpeed: 1.0, 
+            scrollY: 0,
+            targetScrollY: 0,
+            fontSize: 50, // Padrão Fixo
+            isMirrored: false,
+            isInverted: false,
+            textAlign: 'left',
+            lineHeight: 1.5,
+            isEditingInline: false,
+            isSparseText: false,
+            ai: { 
+                enabled: false, 
+                active: false, 
+                recognition: null, 
+                words: [], 
+                currentIndex: 0,
+                lastMatchTime: 0,
+                history: [] 
+            },
+            timelineMarkers: [] // Armazena os pontos da timeline
+        };
+
+        // --- GEMINI AI INTEGRATION ---
+        
+        function toggleAIModal() {
+            const modal = document.getElementById('ai-modal');
+            if (modal.classList.contains('hidden')) {
+                modal.classList.remove('hidden');
+                modal.classList.add('flex');
+            } else {
+                modal.classList.add('hidden');
+                modal.classList.remove('flex');
+            }
+        }
+
+        function resetAIModal() {
+            document.getElementById('ai-input-section').classList.remove('hidden');
+            document.getElementById('ai-input-section').classList.add('flex');
+            document.getElementById('ai-result-container').classList.add('hidden');
+            document.getElementById('ai-result-container').classList.remove('flex');
+            document.getElementById('ai-loading').classList.add('hidden');
+            document.getElementById('ai-loading').classList.remove('flex');
+        }
+
+        function fillPrompt(text) {
+            document.getElementById('ai-prompt-input').value = text;
+        }
+
+        async function callGemini() {
+            const promptInput = document.getElementById('ai-prompt-input').value;
+            if (!promptInput) { alert("Por favor, digite um comando."); return; }
+
+            const currentText = document.getElementById('prompter-content').innerText;
+            const fullPrompt = `
+Contexto: Você é um assistente especialista em roteiros para teleprompter. 
+Instrução do usuário: "${promptInput}"
+Texto atual (se houver):
+"""
+${currentText}
+"""
+
+Sua tarefa: Gere o novo texto baseado na instrução. Se for uma reescrita, mantenha o significado mas melhore o fluxo. Se for para formatar, use quebras de linha curtas, destaque palavras-chave importantes em MAIÚSCULAS e use a barra "/" para indicar pausas longas. Não inclua "Aqui está o texto" ou explicações, apenas o texto final do roteiro.
+`;
+
+            // UI Loading State
+            document.getElementById('ai-input-section').classList.add('hidden');
+            document.getElementById('ai-input-section').classList.remove('flex');
+            document.getElementById('ai-loading').classList.remove('hidden');
+            document.getElementById('ai-loading').classList.add('flex');
+            document.getElementById('ai-result-container').classList.add('hidden');
+            document.getElementById('ai-result-container').classList.remove('flex');
+
+            try {
+                // Using standard generateContent as per instructions for preview environment
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${state.apiKey}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        contents: [{
+                            parts: [{ text: fullPrompt }]
+                        }]
+                    })
+                });
+
+                if (!response.ok) throw new Error('Falha na conexão com a IA');
+
+                const data = await response.json();
+                const generatedText = data.candidates?.[0]?.content?.parts?.[0]?.text || "Erro ao gerar texto.";
+
+                document.getElementById('ai-result-text').value = generatedText;
+                
+                // Show Result
+                document.getElementById('ai-loading').classList.add('hidden');
+                document.getElementById('ai-loading').classList.remove('flex');
+                document.getElementById('ai-result-container').classList.remove('hidden');
+                document.getElementById('ai-result-container').classList.add('flex');
+
+            } catch (error) {
+                console.error(error);
+                alert("Erro ao conectar com a IA. Verifique sua chave API ou conexão.");
+                resetAIModal();
+            }
+        }
+
+        function applyAIResult(action) {
+            const result = document.getElementById('ai-result-text').value;
+            const content = document.getElementById('prompter-content');
+            
+            if (action === 'replace') {
+                content.innerText = result;
+            } else {
+                content.innerText += "\n\n" + result;
+            }
+            
+            document.getElementById('source-text').value = content.innerText;
+            calculateMetrics();
+            prepareTextForAI();
+            setTimeout(renderTimeline, 100);
+            toggleAIModal();
+            resetAIModal(); // Reset for next use
+        }
+
+        // --- END GEMINI INTEGRATION ---
+
+        // --- Lógica do Menu Mais Ferramentas ---
+        function toggleMoreMenu() {
+            const menu = document.getElementById('more-tools-menu');
+            if (menu.classList.contains('hidden')) {
+                menu.classList.remove('hidden');
+                menu.classList.add('flex');
+            } else {
+                menu.classList.add('hidden');
+                menu.classList.remove('flex');
+            }
+        }
+
+        // Fechar menu ao clicar fora
+        document.addEventListener('click', (e) => {
+            const menu = document.getElementById('more-tools-menu');
+            const btn = document.getElementById('btn-more-tools');
+            if (!menu.classList.contains('hidden') && !menu.contains(e.target) && !btn.contains(e.target)) {
+                menu.classList.add('hidden');
+                menu.classList.remove('flex');
+            }
+        });
+        
+        // --- INÍCIO: SEQUÊNCIA DE CARREGAMENTO (SPLASH SCREEN) ---
+        function initLoadingSequence() {
+            const progressBar = document.getElementById('loading-progress');
+            const landingContainer = document.getElementById('landing-container');
+            const phaseLoading = document.getElementById('phase-loading');
+            const phaseMenu = document.getElementById('phase-menu');
+            
+            // Verificação de URL: se for controle remoto, pula o loading
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.get('remote')) { 
+                landingContainer.style.display = 'none';
+                document.getElementById('main-header').style.opacity = '1';
+                document.getElementById('main-workspace').style.opacity = '1';
+                document.getElementById('main-footer').style.opacity = '1';
+                initRemoteClient(urlParams.get('remote'));
+                return; 
+            }
+
+            let progress = 0;
+            const duration = 2500; // 2.5s para carregar
+            const interval = 20;
+            
+            const timer = setInterval(() => {
+                progress += (100 / (duration / interval));
+                if (progress > 100) progress = 100;
+                progressBar.style.width = `${progress}%`;
+
+                if (progress >= 100) {
+                    clearInterval(timer);
+                    setTimeout(() => {
+                        phaseLoading.style.opacity = '0';
+                        setTimeout(() => {
+                            phaseLoading.style.display = 'none';
+                            phaseMenu.style.pointerEvents = 'auto';
+                            phaseMenu.style.opacity = '1';
+                        }, 500);
+                    }, 500);
+                }
+            }, interval);
+        }
+
+        // Inicia assim que a janela carrega
+        window.onload = initLoadingSequence;
+        // --- FIM: SEQUÊNCIA DE CARREGAMENTO ---
+
+        function normalizeText(text) {
+            return text.toLowerCase()
+                        .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+                        .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"")
+                        .trim();
+        }
+
+        const stopWords = ['a', 'o', 'e', 'que', 'do', 'da', 'de', 'em', 'um', 'uma', 'para', 'com', 'nao', 'os', 'as', 'dos', 'das', 'por', 'como', 'mas', 'foi', 'ao', 'aos', 'se', 'na', 'no', 'nas', 'nos', 'mais', 'muito', 'meu', 'minha'];
+
+        const container = document.getElementById('scrolling-container');
+        const content = document.getElementById('prompter-content');
+        const mainDisplay = document.getElementById('main-display');
+        let popupWin = null;
+        let peer = null;
+
+        function startApp(mode) {
+            state.mode = mode;
+            const landingContainer = document.getElementById('landing-container');
+            
+            // Fade Out Landing Container (Title + Menu + Footer)
+            landingContainer.style.opacity = '0';
+            
+            setTimeout(() => {
+                landingContainer.style.display = 'none';
+
+                // Fade In Main UI
+                document.getElementById('main-header').style.opacity = '1';
+                document.getElementById('main-workspace').style.opacity = '1';
+                document.getElementById('main-footer').style.opacity = '1';
+                
+                document.getElementById('source-text').value = content.innerText;
+                updateStatusUI();
+                
+                calculateMetrics();
+                prepareTextForAI();
+                setTimeout(renderTimeline, 100);
+
+                if (mode === 'ai') {
+                    state.ai.enabled = true;
+                    document.getElementById('btn-voice-toggle').classList.remove('hidden');
+                    document.getElementById('ai-debug-container').style.display = 'flex';
+                    initSpeechRec();
+                } else {
+                    state.ai.enabled = false;
+                    document.getElementById('btn-voice-toggle').classList.add('hidden');
+                    document.getElementById('ai-debug-container').style.display = 'none';
+                }
+                
+                requestAnimationFrame(gameLoop);
+            }, 1000);
+        }
+
+        function returnToStart() {
+            stop();
+            state.ai.active = false;
+            if(state.ai.recognition) try { state.ai.recognition.stop(); } catch(e){}
+            updateMicUI(false);
+            
+            const landingContainer = document.getElementById('landing-container');
+            const phaseLoading = document.getElementById('phase-loading');
+            const phaseMenu = document.getElementById('phase-menu');
+
+            // Reset States for Menu View
+            landingContainer.style.display = 'flex';
+            phaseLoading.style.display = 'none';
+            phaseMenu.style.display = 'flex'; // Ensure flex layout
+            phaseMenu.style.opacity = '1';
+            phaseMenu.style.pointerEvents = 'auto';
+            
+            // Hide Main UI
+            document.getElementById('main-header').style.opacity = '0';
+            document.getElementById('main-workspace').style.opacity = '0';
+            document.getElementById('main-footer').style.opacity = '0';
+
+            // Show Landing Container
+            requestAnimationFrame(() => {
+                landingContainer.style.opacity = '1';
+            });
+            
+            goHome();
+        }
+
+        function initSpeechRec() {
+            if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+                alert("Navegador incompatível com Reconhecimento de Voz. Use Chrome/Edge.");
+                return;
+            }
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            state.ai.recognition = new SpeechRecognition();
+            state.ai.recognition.continuous = true;
+            state.ai.recognition.interimResults = true;
+            state.ai.recognition.lang = 'pt-BR';
+
+            state.ai.recognition.onresult = (event) => {
+                let transcript = '';
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    transcript += event.results[i][0].transcript;
+                }
+                processVoiceInput(transcript);
+            };
+            
+            state.ai.recognition.onend = () => {
+                if (state.ai.active) {
+                    try { state.ai.recognition.start(); } catch(e){}
+                } else {
+                    updateMicUI(false);
+                }
+            };
+        }
+
+        function toggleVoiceTracking() {
+            if (!state.ai.enabled) return;
+            if (state.ai.active) {
+                state.ai.active = false;
+                state.ai.recognition.stop();
+                updateMicUI(false);
+            } else {
+                startCountdown(() => {
+                    state.ai.active = true;
+                    // prepareTextForAI(); // Já chamado no início
+                    try { state.ai.recognition.start(); } catch(e){}
+                    updateMicUI(true);
+                    
+                    if (!state.isPlaying) {
+                        state.isPlaying = true;
+                        state.speed = state.baseSpeed; 
+                        updateStatusUI();
+                    }
+                });
+            }
+        }
+
+        function startCountdown(callback) {
+            const overlay = document.getElementById('countdown-overlay');
+            const text = document.getElementById('countdown-text');
+            overlay.classList.remove('hidden');
+            overlay.classList.add('flex');
+            let count = 3;
+            text.innerText = count;
+            const timer = setInterval(() => {
+                count--;
+                if (count > 0) {
+                    text.innerText = count;
+                    text.style.animation = 'none';
+                    text.offsetHeight;
+                    text.style.animation = 'popIn 0.5s';
+                } else {
+                    clearInterval(timer);
+                    text.innerText = "ESCUTANDO";
+                    setTimeout(() => {
+                        overlay.classList.add('hidden');
+                        overlay.classList.remove('flex');
+                        callback();
+                    }, 800);
+                }
+            }, 1000);
+        }
+
+        function prepareTextForAI() {
+            if(state.isEditingInline) return;
+            
+            // 1. Captura o texto preservando quebras de linha
+            const rawText = content.innerText; 
+            
+            // 2. Limpa o container
+            content.innerHTML = '';
+            state.ai.words = [];
+            state.timelineMarkers = []; // Limpa marcadores anteriores
+            
+            // 3. Processa linha por linha para manter estrutura
+            const lines = rawText.split('\n');
+            
+            let globalWordIndex = 0;
+            
+            lines.forEach((line, lineIndex) => {
+                // Remove espaços extras dentro da linha, mas mantém a linha
+                const words = line.split(/\s+/).filter(w => w.length > 0);
+                
+                if (words.length > 0) {
+                    let firstWordOfLine = true;
+                    words.forEach(word => {
+                        const cleanWord = normalizeText(word);
+                        const isStopWord = stopWords.includes(cleanWord) || cleanWord.length < 2;
+                        
+                        const span = document.createElement('span');
+                        span.innerText = word + ' '; // Espaço visual
+                        if (!isStopWord) span.className = 'word-token';
+                        
+                        content.appendChild(span);
+                        
+                        // Guarda referência para a IA
+                        state.ai.words.push({
+                            clean: cleanWord, 
+                            element: span, 
+                            index: globalWordIndex++, 
+                            isStopWord: isStopWord 
+                        });
+
+                        // Se for a primeira palavra da linha, pode ser um marcador de timeline
+                        if (firstWordOfLine) {
+                            state.timelineMarkers.push({
+                                element: span,
+                                preview: line.substring(0, 30) + (line.length > 30 ? '...' : '')
+                            });
+                            firstWordOfLine = false;
+                        }
+                    });
+                }
+                
+                // Adiciona quebra de linha visual após cada linha do original
+                if (lineIndex < lines.length - 1) {
+                    content.appendChild(document.createTextNode('\n'));
+                }
+            });
+        }
+
+        function renderTimeline() {
+            const sidebar = document.getElementById('timeline-sidebar');
+            // Remove dots antigos (mantém a track)
+            const oldDots = sidebar.querySelectorAll('.timeline-dot');
+            oldDots.forEach(dot => dot.remove());
+            
+            if (state.timelineMarkers.length === 0) return;
+
+            const totalHeight = container.scrollHeight;
+            
+            state.timelineMarkers.forEach((marker, index) => {
+                // Filtro para não poluir: se o marcador anterior estiver muito perto, pula
+                // (Opcional, mas bom para textos densos)
+                
+                const dot = document.createElement('div');
+                dot.className = 'timeline-dot';
+                dot.classList.add(`c${index % 6}`); // Adiciona classe de cor rotativa
+                
+                // Posição relativa em %
+                const topPercent = (marker.element.offsetTop / totalHeight) * 100;
+                dot.style.top = topPercent + '%';
+                
+                // Tooltip
+                const tooltip = document.createElement('div');
+                tooltip.className = 'timeline-tooltip';
+                tooltip.innerText = marker.preview;
+                dot.appendChild(tooltip);
+                
+                // Evento de Clique
+                dot.onclick = (e) => {
+                    e.stopPropagation();
+                    stop(); // Pausa se estiver rodando
+                    
+                    // Move o scroll para a posição exata da palavra - offset de leitura
+                    state.scrollY = Math.max(0, marker.element.offsetTop - (window.innerHeight * 0.3));
+                    state.targetScrollY = state.scrollY;
+                    updateView();
+                    
+                    // Sincroniza a IA (chama o sync geometrico)
+                    setTimeout(syncAIToVisual, 50);
+                };
+                
+                sidebar.appendChild(dot);
+            });
+        }
+
+        function processVoiceInput(transcript) {
+            if (!transcript || !state.ai.active) return;
+            
+            const rawTranscript = transcript.toLowerCase();
+            const spokenWords = rawTranscript.trim().split(/\s+/);
+            const lastSpoken = normalizeText(spokenWords[spokenWords.length - 1]);
+            const prevSpoken = spokenWords.length > 1 ? normalizeText(spokenWords[spokenWords.length - 2]) : null;
+            
+            const debugBar = document.getElementById('ai-debug-bar');
+            debugBar.innerText = `Ouvindo: ${transcript.slice(-30)}`;
+
+            if (rawTranscript.includes("parar teleprompter") || rawTranscript.includes("stop prompter")) {
+                stop();
+                debugBar.innerText = "COMANDO: PARAR";
+                debugBar.classList.add("text-red-500");
+                return;
+            }
+            if (rawTranscript.includes("voltar ao início")) {
+                goHome();
+                debugBar.innerText = "COMANDO: INÍCIO";
+                return;
+            }
+
+            if (stopWords.includes(lastSpoken) || lastSpoken.length < 2) return;
+
+            let foundIndex = -1;
+            const immediateWindow = 5; 
+            const distantWindow = 60; 
+
+            for (let i = state.ai.currentIndex; i < Math.min(state.ai.currentIndex + immediateWindow, state.ai.words.length); i++) {
+                const item = state.ai.words[i];
+                if (!item.isStopWord && item.clean === lastSpoken) {
+                    foundIndex = i;
+                    break; 
+                }
+            }
+
+            if (foundIndex === -1 && prevSpoken) {
+                for (let i = state.ai.currentIndex + immediateWindow; i < Math.min(state.ai.currentIndex + distantWindow, state.ai.words.length); i++) {
+                    const item = state.ai.words[i];
+                    if (i > 0) {
+                        const prevItem = state.ai.words[i-1];
+                        if (item.clean === lastSpoken && prevItem.clean === prevSpoken) {
+                            foundIndex = i;
+                            break; 
+                        }
+                    }
+                }
+            }
+            
+            if (foundIndex !== -1) {
+                state.ai.currentIndex = foundIndex;
+                const targetElement = state.ai.words[foundIndex].element;
+                const prev = document.querySelector('.word-active');
+                if(prev) prev.classList.remove('word-active');
+                targetElement.classList.add('word-active');
+                
+                debugBar.innerText = `MATCH: ${lastSpoken} (${foundIndex})`;
+                
+                const elTop = targetElement.offsetTop; 
+                state.targetScrollY = elTop - (window.innerHeight * 0.30);
+
+                if (foundIndex < state.ai.words.length - 1) {
+                    const nextEl = state.ai.words[foundIndex + 1].element;
+                    const vertDist = nextEl.offsetTop - targetElement.offsetTop;
+                    
+                    if (vertDist > state.fontSize * 1.2) {
+                        state.isSparseText = true;
+                    } else {
+                        state.isSparseText = false;
+                    }
+                }
+            }
+        }
+
+        function updateMicUI(active) {
+            const btn = document.getElementById('btn-voice-toggle');
+            if (active) {
+                btn.classList.add('mic-listening');
+                btn.innerHTML = '<i class="fas fa-microphone"></i>';
+            } else {
+                btn.classList.remove('mic-listening');
+                btn.innerHTML = '<i class="fas fa-microphone-alt"></i>';
+            }
+        }
+
+        function gameLoop() {
+            // SAFETY STOP & CRUISE CONTROL (v3.2)
+            if (state.ai.active && state.isPlaying) {
+                const activeEl = document.querySelector('.word-active');
+                if (activeEl) {
+                    const rect = activeEl.getBoundingClientRect();
+                    const idealPos = window.innerHeight * 0.30;
+                    const currentPos = rect.top;
+                    const diff = currentPos - idealPos; // > 0: word below (lag), < 0: word above (lead)
+
+                    // 1. Safety Stop (Disappearing)
+                    if (rect.top < window.innerHeight * 0.05) {
+                        stop();
+                    } 
+                    // 2. Brake (Near Top)
+                    else if (rect.top < window.innerHeight * 0.15) {
+                        state.speed *= 0.95; 
+                        if(state.speed < 0.1) state.speed = 0;
+                    } 
+                    // 3. Cruise & Magnet
+                    else {
+                        // Word is far down (lagging > 100px) -> Magnet + Accel
+                        if (diff > 100) {
+                             state.scrollY += diff * 0.05; // Magnet
+                             state.speed += 0.05; // Accel
+                        }
+                        // Word is down (lagging 10-100px) -> Gentle Accel
+                        else if (diff > 10) {
+                             state.speed += 0.01;
+                        }
+                        // Word is up (leading -10 to -50px) -> Decel
+                        else if (diff < -10) {
+                             state.speed -= 0.02;
+                             if(state.speed < 0) state.speed = 0;
+                        }
+                        // If between -10 and 10, speed is steady
+                    }
+                }
+            }
+
+            // Engine
+            if (state.isPlaying && state.speed !== 0) {
+                state.scrollY += state.speed;
+                state.targetScrollY = state.scrollY; 
+            } 
+            
+            updateView();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function togglePlay() {
+            if (state.isEditingInline) {
+                exitInlineEdit();
+                return;
+            }
+            state.isPlaying = !state.isPlaying;
+            if (state.isPlaying && Math.abs(state.speed) < 0.1) {
+                 state.speed = state.baseSpeed; 
+            }
+            updateStatusUI();
+        }
+
+        function stop() {
+            state.isPlaying = false;
+            state.speed = 0;
+            if (state.ai.active) toggleVoiceTracking(); 
+            updateStatusUI();
+        }
+
+        function adjustSpeed(delta) {
+            if (state.isEditingInline) return;
+            
+            state.baseSpeed += delta;
+            state.speed += delta;
+            
+            if (Math.abs(state.speed) < 0.05) state.speed = 0;
+            if (state.baseSpeed < 0.1) state.baseSpeed = 0.1; 
+            
+            if (!state.isPlaying && state.speed !== 0) state.isPlaying = true;
+            if (state.speed === 0) state.isPlaying = false;
+            updateStatusUI();
+        }
+
+        function updateView() {
+            container.style.transform = `translateY(-${state.scrollY}px)`;
+            content.style.fontSize = `${state.fontSize}px`;
+            content.style.textAlign = state.textAlign;
+            content.style.lineHeight = state.lineHeight;
+            document.getElementById('font-size-display').innerText = state.fontSize + 'px';
+
+            if (popupWin && !popupWin.closed) {
+                popupWin.postMessage({
+                    type: 'sync',
+                    scrollY: state.scrollY,
+                    fontSize: state.fontSize,
+                    isMirrored: state.isMirrored,
+                    isInverted: state.isInverted,
+                    textAlign: state.textAlign,
+                    lineHeight: state.lineHeight,
+                    contentHTML: content.innerHTML
+                }, '*');
+            }
+        }
+
+        function calculateMetrics() {
+            const text = content.innerText;
+            const words = text.trim().split(/\s+/).filter(word => word.length > 0).length;
+            const wpm = 130;
+            const minutes = Math.floor(words / wpm);
+            const seconds = Math.floor(((words % wpm) / wpm) * 60);
+            document.getElementById('word-count').innerText = words;
+            document.getElementById('read-time').innerText = "~" + `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        }
+
+        content.addEventListener('dblclick', () => { 
+            state.isEditingInline = true; 
+            state.isPlaying = false; 
+            content.contentEditable = "true"; 
+            content.focus();
+            updateStatusUI();
+            document.getElementById('edit-warning').style.display = 'block'; 
+        });
+        
+        function exitInlineEdit() {
+            state.isEditingInline = false; 
+            content.contentEditable = "false"; 
+            document.getElementById('source-text').value = content.innerText;
+            calculateMetrics();
+            prepareTextForAI(); // Atualiza estrutura
+            setTimeout(renderTimeline, 100); // Atualiza visual
+            document.getElementById('edit-warning').style.display = 'none';
+        }
+
+        document.addEventListener('click', (e) => {
+            if (state.isEditingInline && !content.contains(e.target)) {
+                exitInlineEdit();
+            }
+        });
+
+        // ------------------------------------------------
+        // LÓGICA DE SINCRONIZAÇÃO GEOMÉTRICA (SCROLL)
+        // ------------------------------------------------
+        
+        let scrollTimeout;
+        
+        function syncAIToVisual() {
+            if (!state.ai.words || state.ai.words.length === 0) return;
+            
+            const idealPos = window.innerHeight * 0.30;
+            
+            let closestIndex = -1;
+            let minDiff = Infinity;
+            
+            state.ai.words.forEach((item, idx) => {
+                 const rect = item.element.getBoundingClientRect();
+                 const diff = Math.abs(rect.top - idealPos);
+                 if (diff < minDiff) {
+                     minDiff = diff;
+                     closestIndex = idx;
+                 }
+            });
+            
+            if (closestIndex !== -1) {
+                state.ai.currentIndex = closestIndex;
+                const prev = document.querySelector('.word-active');
+                if(prev) prev.classList.remove('word-active');
+                state.ai.words[closestIndex].element.classList.add('word-active');
+            }
+        }
+
+        document.addEventListener('wheel', (e) => {
+            if (!document.getElementById('edit-modal').classList.contains('hidden')) return;
+            if (state.isEditingInline) return;
+            
+            if (state.isPlaying) {
+                stop();
+            }
+            
+            const delta = e.deltaY * 1.5;
+            state.scrollY = Math.max(0, state.scrollY + delta);
+            state.targetScrollY = state.scrollY; 
+            
+            updateView();
+            
+            clearTimeout(scrollTimeout);
+            scrollTimeout = setTimeout(syncAIToVisual, 100);
+            
+        }, { passive: true });
+
+        function adjustFontSize(delta) { 
+            const newSize = state.fontSize + delta;
+            state.fontSize = newSize; 
+            if (state.fontSize < 20) state.fontSize = 20; 
+            updateView();
+            // Recalcula timeline pois altura muda
+            setTimeout(renderTimeline, 100);
+        }
+
+        function toggleAlign() { state.textAlign = state.textAlign === 'center' ? 'left' : 'center'; updateView(); setTimeout(renderTimeline, 100); }
+        function toggleLineHeight() { if (state.lineHeight === 1.5) state.lineHeight = 2.0; else if (state.lineHeight === 2.0) state.lineHeight = 1.2; else state.lineHeight = 1.5; updateView(); setTimeout(renderTimeline, 100); }
+        function toggleMirror() { state.isMirrored = !state.isMirrored; updateView(); }
+        function toggleInvert() { state.isInverted = !state.isInverted; if (state.isInverted) { mainDisplay.classList.replace('bg-black', 'bg-white'); content.classList.replace('text-white', 'text-black'); } else { mainDisplay.classList.replace('bg-white', 'bg-black'); content.classList.replace('text-black', 'text-white'); } updateView(); }
+
+        function triggerLocalUpload() { document.getElementById('file-input').click(); }
+        document.getElementById('file-input').addEventListener('change', function(e) { const file = e.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = function(e) { const text = e.target.result; content.innerText = text; document.getElementById('source-text').value = text; goHome(); calculateMetrics(); alert("Arquivo carregado!"); }; reader.readAsText(file); this.value = ''; });
+        function toggleShortcutsModal() { const modal = document.getElementById('shortcuts-modal'); modal.classList.toggle('hidden'); }
+        function toggleEditMode() { const modal = document.getElementById('edit-modal'); modal.classList.toggle('hidden'); if(!modal.classList.contains('hidden')) { document.getElementById('source-text').value = content.innerText; stop(); document.getElementById('source-text').focus(); } }
+        function saveAndCloseEdit() { content.innerText = document.getElementById('source-text').value; toggleEditMode(); goHome(); calculateMetrics(); prepareTextForAI(); setTimeout(renderTimeline, 100); }
+        
+        document.addEventListener('keydown', (e) => {
+            if (!document.getElementById('edit-modal').classList.contains('hidden')) { if (e.key === 'Escape') toggleEditMode(); return; }
+            if (state.isEditingInline) { if (e.key === 'Escape') exitInlineEdit(); return; }
+            if(['Space', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.code)) e.preventDefault();
+            switch(e.key.toLowerCase()) {
+                case ' ': case 'k': togglePlay(); break;
+                case 'arrowup': case 'l': adjustSpeed(0.1); break;
+                case 'arrowdown': case 'j': adjustSpeed(-0.1); break;
+                case 'escape': stop(); break;
+                case 'home': case 'i': goHome(); break;
+                case 'u': state.speed = -state.speed; updateStatusUI(); break;
+                case 'q': toggleInvert(); break;
+                case '+': adjustFontSize(2); break;
+                case '-': adjustFontSize(-2); break;
+                case 'm': toggleMirror(); break;
+            }
+        });
+
+        function goHome() { state.scrollY = 0; state.speed = 0; state.isPlaying = false; if(state.ai.enabled) { state.ai.currentIndex = 0; state.targetScrollY = 0; } updateView(); updateStatusUI(); }
+        function updateStatusUI() {
+            const btnPlay = document.getElementById('btn-play');
+            const statusSpeed = document.getElementById('status-speed');
+            const touchBtnPlay = document.getElementById('touch-btn-play');
+
+            if (state.isPlaying) {
+                btnPlay.innerHTML = '<i class="fas fa-pause"></i>';
+                // Cria Teal Darker
+                btnPlay.className = "w-12 h-10 border-2 text-white rounded-lg transition flex items-center justify-center text-xl shadow-lg shrink-0";
+                btnPlay.style.backgroundColor = '#005f5d'; // Darker teal
+                btnPlay.style.borderColor = '#008280';
+                if(touchBtnPlay) {
+                    touchBtnPlay.innerHTML = '<i class="fas fa-pause text-5xl mb-4"></i><span class="font-bold uppercase tracking-widest text-xl">Pausar</span>';
+                    touchBtnPlay.className = "remote-btn col-span-2 rounded-2xl flex flex-col items-center justify-center py-8 shadow-lg border select-none text-white";
+                    touchBtnPlay.style.backgroundColor = '#005f5d';
+                    touchBtnPlay.style.borderColor = '#008280';
+                }
+            } else {
+                btnPlay.innerHTML = '<i class="fas fa-play"></i>';
+                // Cria Teal
+                btnPlay.className = "w-12 h-10 border-2 text-white rounded-lg transition flex items-center justify-center text-xl shadow-lg shrink-0";
+                btnPlay.style.backgroundColor = '#008280';
+                btnPlay.style.borderColor = '#008280';
+                if(touchBtnPlay) {
+                    touchBtnPlay.innerHTML = '<i class="fas fa-play text-5xl mb-4"></i><span class="font-bold uppercase tracking-widest text-xl">Play</span>';
+                    touchBtnPlay.className = "remote-btn col-span-2 rounded-2xl flex flex-col items-center justify-center py-8 shadow-lg active:opacity-80 select-none text-white";
+                    touchBtnPlay.style.backgroundColor = '#008280';
+                }
+            }
+            
+            if (state.ai.active && state.speed === 0) {
+                statusSpeed.innerText = "AI";
+                statusSpeed.style.color = '#d0235b'; // Magenta
+            } else {
+                statusSpeed.innerText = state.speed.toFixed(1);
+                statusSpeed.style.color = '#008280'; // Teal
+            }
+        }
+        function enableTouchMode() { document.getElementById('touch-overlay').classList.remove('hidden'); document.getElementById('touch-overlay').classList.add('flex'); }
+        function disableTouchMode() { document.getElementById('touch-overlay').classList.add('hidden'); document.getElementById('touch-overlay').classList.remove('flex'); }
+        function openPrompterWindow() { if (popupWin && !popupWin.closed) { popupWin.focus(); return; } popupWin = window.open("", "TeleprompterDisplay", "width=1024,height=768,menubar=no,toolbar=no"); if (!popupWin) { alert("Permita pop-ups!"); return; } const html = `<!DOCTYPE html><html><head><style> body { margin: 0; background-color: black; color: white; font-family: 'Segoe UI', sans-serif; overflow: hidden; } #container { position: relative; padding-top: 30vh; padding-bottom: 70vh; will-change: transform; } #content { font-weight: bold; text-align: left; max-width: 90%; margin: 0 auto; white-space: pre-wrap; transition: all 0.2s; } .mirror { transform: scaleX(-1); } .invert { background-color: white !important; color: black !important; } .word-token { border-radius: 4px; transition: background 0.3s; padding: 2px 0; } .word-active { color: #f8ac1a; text-shadow: 0 0 15px rgba(248, 172, 26, 0.6); } </style></head><body><div id="container"><div id="content">${content.innerHTML}</div></div><script> const container = document.getElementById('container'); const content = document.getElementById('content'); window.addEventListener('message', (e) => { const d = e.data; if (d.type === 'sync') { container.style.transform = \`translateY(-\${d.scrollY}px)\`; content.style.fontSize = d.fontSize + 'px'; content.style.textAlign = d.textAlign; content.style.lineHeight = d.lineHeight; document.body.style.transform = d.isMirrored ? 'scaleX(-1)' : 'none'; if (d.isInverted) { document.body.classList.add('invert'); content.classList.add('invert'); } else { document.body.classList.remove('invert'); content.classList.remove('invert'); } if (content.innerHTML !== d.contentHTML) content.innerHTML = d.contentHTML; } }); <\/script></body></html>`; popupWin.document.write(html); popupWin.document.close(); const dot = document.getElementById('status-dot'); dot.classList.replace('status-off', 'status-on'); setTimeout(updateView, 500); setInterval(() => { if (popupWin.closed) { dot.classList.replace('status-on', 'status-off'); } }, 1000); }
+        function toggleQRModal() { const modal = document.getElementById('qr-modal'); if (modal.classList.contains('hidden')) { modal.classList.remove('hidden'); initRemoteHost(); } else { modal.classList.add('hidden'); } }
+        function initRemoteHost() { if(peer) return; const status = document.getElementById('connection-status'); const qrContainer = document.getElementById('qrcode-container'); qrContainer.innerHTML = ''; peer = new Peer(); peer.on('open', (id) => { const remoteUrl = window.location.href.split('?')[0] + '?remote=' + id; new QRCode(qrContainer, { text: remoteUrl, width: 200, height: 200 }); status.innerHTML = 'Aguardando conexão...<br>ID: ' + id; }); peer.on('connection', (conn) => { status.innerHTML = 'Conectado!'; document.getElementById('status-dot').className = 'status-dot status-remote'; conn.on('data', (data) => { switch(data.action) { case 'play': togglePlay(); break; case 'speedUp': adjustSpeed(0.1); break; case 'speedDown': adjustSpeed(-0.1); break; case 'stop': stop(); break; case 'top': goHome(); break; } }); }); }
+        function initRemoteClient(hostId) { document.body.innerHTML=''; document.body.className='bg-black text-white p-4'; document.body.innerHTML='<h1 class="text-xl text-center mt-10">Conectando...</h1>'; const peer = new Peer(); peer.on('open', () => { const conn = peer.connect(hostId); conn.on('open', () => { document.body.innerHTML = '<div class="h-screen flex flex-col justify-center"><button id="btn-play" class="bg-green-600 p-8 rounded-xl text-2xl font-bold mb-4">PLAY/PAUSE</button><div class="grid grid-cols-2 gap-4"><button id="btn-slower" class="bg-gray-800 p-4 rounded text-xl">Mais Lento</button><button id="btn-faster" class="bg-gray-800 p-4 rounded text-xl">Mais Rápido</button></div></div>'; document.getElementById('btn-play').onclick = () => conn.send({action:'play'}); document.getElementById('btn-faster').onclick = () => conn.send({action:'speedUp'}); document.getElementById('btn-slower').onclick = () => conn.send({action:'speedDown'}); }); }); }
+    </script>
+</body>
+</html>
